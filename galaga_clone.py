@@ -9,7 +9,7 @@ pygame.init()
 SCREEN_WIDTH = 600
 SCREEN_HEIGHT = 800
 screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-pygame.display.set_caption("Simple Galaga Clone")
+pygame.display.set_caption("Simple Invaders Clone")
 
 # Colors
 WHITE = (255, 255, 255)
@@ -45,11 +45,33 @@ font = pygame.font.SysFont(None, 36)
 class Player(pygame.sprite.Sprite):
     def __init__(self):
         super().__init__()
-        self.image = pygame.Surface((PLAYER_WIDTH, PLAYER_HEIGHT))
-        self.image.fill(GREEN)
+        # Create an "Invaders"-style player ship sprite using pixel art
+        self.image = pygame.Surface((PLAYER_WIDTH, PLAYER_HEIGHT), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
         self.rect.midbottom = (SCREEN_WIDTH // 2, SCREEN_HEIGHT - 30)
         self.speed = 0
+
+        # Draw the player ship pixel art (simple invader-like shape)
+        # Using green color as before
+        green = GREEN
+        # Clear surface
+        self.image.fill((0, 0, 0, 0))
+        # Draw pixels manually to resemble classic invader ship
+        pixel_size = 5
+        # Coordinates for pixels relative to top-left of image
+        pixels = [
+            (2, 0), (3, 0),
+            (1, 1), (4, 1),
+            (0, 2), (1, 2), (2, 2), (3, 2), (4, 2), (5, 2),
+            (0, 3), (5, 3),
+            (1, 4), (4, 4),
+            (2, 5), (3, 5)
+        ]
+        for (x, y) in pixels:
+            pygame.draw.rect(self.image, green, (x * pixel_size, y * pixel_size, pixel_size, pixel_size))
+
+        self.last_shot_time = 0
+        self.shoot_delay = 900  # milliseconds, adjusted rate of fire
 
     def update(self):
         self.rect.x += self.speed
@@ -58,32 +80,49 @@ class Player(pygame.sprite.Sprite):
         if self.rect.right > SCREEN_WIDTH:
             self.rect.right = SCREEN_WIDTH
 
-    def shoot(self):
-        bullet = Bullet(self.rect.centerx, self.rect.top)
+    def shoot(self, vx=0):
+        bullet = Bullet(self.rect.centerx, self.rect.top, vx)
         return bullet
 
 class Bullet(pygame.sprite.Sprite):
-    def __init__(self, x, y):
+    def __init__(self, x, y, vx=0):
         super().__init__()
         self.image = pygame.Surface((BULLET_WIDTH, BULLET_HEIGHT))
         self.image.fill(WHITE)
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
+        self.vx = vx  # horizontal velocity
 
     def update(self):
         self.rect.y -= BULLET_SPEED
-        if self.rect.bottom < 0:
+        self.rect.x += self.vx
+        if self.rect.bottom < 0 or self.rect.right < 0 or self.rect.left > SCREEN_WIDTH:
             self.kill()
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, x, y):
         super().__init__()
-        self.image = pygame.Surface((ENEMY_WIDTH, ENEMY_HEIGHT))
-        self.image.fill(RED)
+        # Create an "Invaders"-style enemy sprite using pixel art
+        self.image = pygame.Surface((ENEMY_WIDTH, ENEMY_HEIGHT), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
         self.rect.topleft = (x, y)
         self.last_shot_time = 0
         self.shoot_delay = 2000  # milliseconds, will decrease with level
+
+        # Draw the enemy pixel art (simple invader-like shape)
+        red = RED
+        self.image.fill((0, 0, 0, 0))
+        pixel_size = 5
+        # Coordinates for pixels relative to top-left of image
+        pixels = [
+            (1, 0), (2, 0), (3, 0), (4, 0),
+            (0, 1), (5, 1),
+            (0, 2), (1, 2), (2, 2), (3, 2), (4, 2), (5, 2),
+            (1, 3), (4, 3),
+            (0, 4), (5, 4)
+        ]
+        for (x_pix, y_pix) in pixels:
+            pygame.draw.rect(self.image, red, (x_pix * pixel_size, y_pix * pixel_size, pixel_size, pixel_size))
 
     def shoot(self):
         bullet = EnemyBullet(self.rect.centerx, self.rect.bottom)
@@ -96,6 +135,7 @@ class EnemyGroup(pygame.sprite.Group):
         self.speed = ENEMY_SPEED
         self.drop = ENEMY_DROP
         self.speed_increment = 0
+        self.dropped = False
         self.create_enemies()
 
     def create_enemies(self):
@@ -106,19 +146,18 @@ class EnemyGroup(pygame.sprite.Group):
 
     def update(self, level=1):
         move_sideways = True
-        dropped = False
         for enemy in self.sprites():
             enemy.rect.x += self.direction * self.speed
             if enemy.rect.right >= SCREEN_WIDTH or enemy.rect.left <= 0:
                 move_sideways = False
 
-        if not move_sideways and not dropped:
+        if not move_sideways and not self.dropped:
             self.direction *= -1
             for enemy in self.sprites():
                 enemy.rect.y += self.drop // 2  # Reduce drop distance to half
-            dropped = True
-        else:
-            dropped = False
+            self.dropped = True
+        elif move_sideways:
+            self.dropped = False
 
         # Increase speed with level and speed increment
         self.speed = ENEMY_SPEED + (level - 1) * 0.5 + self.speed_increment
@@ -132,15 +171,48 @@ class PowerUp(pygame.sprite.Sprite):
     def __init__(self, x, y, kind):
         super().__init__()
         self.kind = kind
-        self.image = pygame.Surface((POWERUP_WIDTH, POWERUP_HEIGHT))
-        if kind == "shield":
-            self.image.fill((0, 0, 255))  # Blue for shield
-        elif kind == "rapid_fire":
-            self.image.fill((255, 255, 0))  # Yellow for rapid fire
-        else:
-            self.image.fill((255, 0, 255))  # Magenta for unknown
+        self.image = pygame.Surface((POWERUP_WIDTH, POWERUP_HEIGHT), pygame.SRCALPHA)
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
+
+        # Draw nicer icons for power-ups
+        if kind == "shield":
+            # Blue shield icon: circle with a shield shape inside
+            blue = (0, 0, 255)
+            white = (255, 255, 255)
+            center = (POWERUP_WIDTH // 2, POWERUP_HEIGHT // 2)
+            radius = POWERUP_WIDTH // 2 - 3
+            pygame.draw.circle(self.image, blue, center, radius)
+            # Draw a simple shield shape (triangle + rectangle)
+            points = [
+                (center[0] - 8, center[1] - 4),
+                (center[0] + 8, center[1] - 4),
+                (center[0] + 4, center[1] + 8),
+                (center[0] - 4, center[1] + 8)
+            ]
+            pygame.draw.polygon(self.image, white, points)
+            pygame.draw.line(self.image, blue, (center[0], center[1] - 4), (center[0], center[1] + 8), 2)
+        elif kind == "spread_fire":
+            # Yellow rapid fire icon: lightning bolt shape
+            yellow = (255, 255, 0)
+            points = [
+                (POWERUP_WIDTH // 2 - 6, POWERUP_HEIGHT // 4),
+                (POWERUP_WIDTH // 2 + 2, POWERUP_HEIGHT // 4),
+                (POWERUP_WIDTH // 2 - 2, POWERUP_HEIGHT // 2),
+                (POWERUP_WIDTH // 2 + 6, POWERUP_HEIGHT // 2),
+                (POWERUP_WIDTH // 2 - 2, 3 * POWERUP_HEIGHT // 4),
+                (POWERUP_WIDTH // 2 + 2, 3 * POWERUP_HEIGHT // 4),
+                (POWERUP_WIDTH // 2 - 6, POWERUP_HEIGHT // 2)
+            ]
+            pygame.draw.polygon(self.image, yellow, points)
+        else:
+            # Magenta question mark for unknown power-up
+            magenta = (255, 0, 255)
+            self.image.fill((0, 0, 0, 0))
+            font = pygame.font.SysFont(None, 24)
+            text = font.render("?", True, magenta)
+            text_rect = text.get_rect(center=(POWERUP_WIDTH // 2, POWERUP_HEIGHT // 2))
+            self.image.blit(text, text_rect)
 
     def update(self):
         self.rect.y += POWERUP_SPEED
@@ -175,12 +247,13 @@ def main():
 
     score = 0
     shield_active = False
-    rapid_fire_active = False
-    rapid_fire_timer = 0
+    spread_fire_active = False
+    spread_fire_timer = 0
     level = 1
     enemy_fire_rate = 2000  # milliseconds, will decrease with level
     last_enemy_shot_time = 0
     player_lives = 3
+    enemies_defeated = 0
 
     running = True
 
@@ -196,14 +269,18 @@ def main():
                 elif event.key == pygame.K_RIGHT:
                     player.speed = PLAYER_SPEED
                 elif event.key == pygame.K_SPACE:
-                    if rapid_fire_active:
-                        # Shoot multiple bullets rapidly
-                        for _ in range(3):
+                    current_time = pygame.time.get_ticks()
+                    if current_time - player.last_shot_time >= player.shoot_delay:
+                        player.last_shot_time = current_time
+                        if spread_fire_active:
+                            # Shoot multiple bullets rapidly with slight random divergence
+                            for _ in range(3):
+                                vx = random.uniform(-1.5, 1.5)  # small random horizontal velocity
+                                bullet = player.shoot(vx)
+                                bullets.add(bullet)
+                        else:
                             bullet = player.shoot()
                             bullets.add(bullet)
-                    else:
-                        bullet = player.shoot()
-                        bullets.add(bullet)
             elif event.type == pygame.KEYUP:
                 if event.key == pygame.K_LEFT and player.speed < 0:
                     player.speed = 0
@@ -218,12 +295,17 @@ def main():
 
         # Check bullet-enemy collisions
         hits = pygame.sprite.groupcollide(enemies, bullets, True, True)
-        score += len(hits) * 10
+        enemies_defeated += len(hits)
+        for enemy in hits:
+            # Calculate score based on enemy's vertical position (higher = more points)
+            height_factor = max(0, SCREEN_HEIGHT - enemy.rect.top)
+            points = int(10 + (height_factor / SCREEN_HEIGHT) * 40)  # base 10 + up to 40 extra points
+            score += points
 
         # Spawn power-ups randomly on enemy destruction
         for enemy in hits:
-            if random.random() < 0.3:  # 30% chance to spawn power-up
-                kind = random.choice(["shield", "rapid_fire"])
+            if random.random() < 0.1:  # 10% chance to spawn power-up (slightly higher)
+                kind = random.choice(["shield", "spread_fire"])
                 powerup = PowerUp(enemy.rect.centerx, enemy.rect.centery, kind)
                 powerups.add(powerup)
             # Increase speed increment for remaining enemies
@@ -234,13 +316,13 @@ def main():
         for powerup in powerup_hits:
             if powerup.kind == "shield":
                 shield_active = True
-            elif powerup.kind == "rapid_fire":
-                rapid_fire_active = True
-                rapid_fire_timer = pygame.time.get_ticks()
+            elif powerup.kind == "spread_fire":
+                spread_fire_active = True
+                spread_fire_timer = pygame.time.get_ticks()
 
         # Manage rapid fire timer (5 seconds duration)
-        if rapid_fire_active and pygame.time.get_ticks() - rapid_fire_timer > 5000:
-            rapid_fire_active = False
+        if spread_fire_active and pygame.time.get_ticks() - spread_fire_timer > 5000:
+            spread_fire_active = False
 
         # Enemy shooting logic
         if current_time - last_enemy_shot_time > enemy_fire_rate:
@@ -259,8 +341,8 @@ def main():
                 player_lives -= 1
                 # Cancel all power-ups on hit
                 shield_active = False
-                rapid_fire_active = False
-                rapid_fire_timer = 0
+                spread_fire_active = False
+                spread_fire_timer = 0
                 if player_lives <= 0:
                     running = False
 
@@ -277,8 +359,8 @@ def main():
                     player_lives -= 1
                     # Cancel all power-ups on hit
                     shield_active = False
-                    rapid_fire_active = False
-                    rapid_fire_timer = 0
+                    spread_fire_active = False
+                    spread_fire_timer = 0
                     if player_lives <= 0:
                         running = False
 
@@ -300,14 +382,48 @@ def main():
         draw_text(screen, f"Lives: {player_lives}", 10, 70)
         if shield_active:
             draw_text(screen, "Shield Active", 400, 10)
-        if rapid_fire_active:
-            draw_text(screen, "Rapid Fire Active", 400, 40)
+        if spread_fire_active:
+            draw_text(screen, "Spread Fire Active", 400, 40)
 
         pygame.display.flip()
 
+    # Game over screen with centered text
+    screen.fill(BLACK)
+    texts = [
+        ("Vibe Invaders", 72),
+        (f"Final Score: {score}", 36),
+        (f"Enemies defeated: {enemies_defeated}", 36),
+        ("Vibe coded with OpenAI for $0.48", 24)
+    ]
+    y = SCREEN_HEIGHT // 3
+    for text, size in texts:
+        font_obj = pygame.font.SysFont(None, size)
+        img = font_obj.render(text, True, WHITE)
+        rect = img.get_rect(center=(SCREEN_WIDTH // 2, y))
+        screen.blit(img, rect)
+        y += size + 20
+
+    pygame.display.flip()
+
+    # Wait for a few seconds before quitting
+    pygame.time.wait(5000)
     pygame.quit()
     sys.exit()
 
+    pygame.display.flip()
+
+    # Game over screen with statistics and final message
+    screen.fill(BLACK)
+    draw_text(screen, "Vibe Invaders", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3, center=True, size=72)
+    draw_text(screen, f"Final Score: {score}", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 100, center=True)
+    draw_text(screen, f"Enemies defeated: {len(hits)}", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 140, center=True)
+    draw_text(screen, "Vibe coded with OpenAI for $0.57", SCREEN_WIDTH // 2, SCREEN_HEIGHT // 3 + 200, center=True)
+    pygame.display.flip()
+
+    # Wait for a few seconds before quitting
+    pygame.time.wait(5000)
+    pygame.quit()
+    sys.exit()
 if __name__ == "__main__":
     main()
 
